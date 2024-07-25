@@ -1,0 +1,21 @@
+[package]
+name = "getip"
+version = "0.1.0"
+edition = "2021"
+description = "Find the public IP address of a device"
+documentation = "https://docs.rs/getip"
+homepage = "https://github.com/rexagon/getip"
+repository = "https://github.com/rexagon/getip"
+license = "MIT"
+categories = ["network-programming"]
+include = ["src/**/*.rs", "README.md", "LICENSE", "Cargo.toml"]
+keywords = ["public", "external", "ip", "async"]
+
+[dependencies]
+futures-util = "0.3"
+hickory-client = "0.24"
+thiserror = "1.0"
+tokio = { version = "1", features = ["rt"] }
+
+[dev-dependencies]
+tokio = { version = "1", features = ["macros"] }
