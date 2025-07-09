@@ -5,16 +5,17 @@ use std::task::{Context, Poll};
 
 use futures_util::future::BoxFuture;
 use futures_util::stream::BoxStream;
-use futures_util::{future, ready, stream, FutureExt, Stream, StreamExt};
-use hickory_client::client::AsyncClient;
-use hickory_client::op::Query;
-use hickory_client::proto::error::{ProtoError, ProtoErrorKind};
+use futures_util::{FutureExt, Stream, StreamExt, future, ready, stream};
+use hickory_client::client::Client;
+use hickory_client::proto::op::Query;
+use hickory_client::proto::rr::{Name, RData, RecordType};
+use hickory_client::proto::runtime::TokioRuntimeProvider;
+use hickory_client::proto::udp::UdpClientStream;
 use hickory_client::proto::xfer::{DnsHandle, DnsRequestOptions, DnsResponse};
-use hickory_client::rr::{Name, RData, RecordType};
-use hickory_client::udp::UdpClientStream;
+use hickory_client::proto::{ProtoError, ProtoErrorKind};
 
-use crate::error::Error;
 use crate::AddrVersion;
+use crate::error::Error;
 
 const DEFAULT_DNS_PORT: u16 = 53;
 
@@ -199,8 +200,8 @@ async fn dns_query(
     query: Query,
     query_opts: DnsRequestOptions,
 ) -> Result<DnsResponse, ProtoError> {
-    let stream = UdpClientStream::<tokio::net::UdpSocket>::new(server);
-    let (client, bg) = AsyncClient::connect(stream).await?;
+    let stream = UdpClientStream::builder(server, TokioRuntimeProvider::default()).build();
+    let (client, bg) = Client::connect(stream).await?;
     tokio::spawn(bg);
 
     client
@@ -218,9 +219,9 @@ fn parse_dns_response(response: DnsResponse, method: QueryMethod) -> Result<IpAd
     };
 
     match answer.into_data() {
-        Some(RData::A(addr)) if method == QueryMethod::A => Ok(IpAddr::V4(addr.0)),
-        Some(RData::AAAA(addr)) if method == QueryMethod::AAAA => Ok(IpAddr::V6(addr.0)),
-        Some(RData::TXT(txt)) if method == QueryMethod::TXT => {
+        RData::A(addr) if method == QueryMethod::A => Ok(IpAddr::V4(addr.0)),
+        RData::AAAA(addr) if method == QueryMethod::AAAA => Ok(IpAddr::V6(addr.0)),
+        RData::TXT(txt) if method == QueryMethod::TXT => {
             let Some(addr_bytes) = txt.iter().next() else {
                 return Err(Error::Addr);
             };

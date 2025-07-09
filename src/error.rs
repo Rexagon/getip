@@ -10,5 +10,5 @@ pub enum Error {
     Version,
     /// DNS resolver error.
     #[error("dns resolver: {0}")]
-    Dns(#[from] hickory_client::proto::error::ProtoError),
+    Dns(#[from] hickory_client::proto::ProtoError),
 }
