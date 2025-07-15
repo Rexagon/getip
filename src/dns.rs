@@ -8,7 +8,7 @@ use futures_util::stream::BoxStream;
 use futures_util::{FutureExt, Stream, StreamExt, future, ready, stream};
 use hickory_client::client::Client;
 use hickory_client::proto::op::Query;
-use hickory_client::proto::rr::{Name, RData, RecordType};
+use hickory_client::proto::rr::{DNSClass, Name, RData, RecordType};
 use hickory_client::proto::runtime::TokioRuntimeProvider;
 use hickory_client::proto::udp::UdpClientStream;
 use hickory_client::proto::xfer::{DnsHandle, DnsRequestOptions, DnsResponse};
@@ -19,7 +19,14 @@ use crate::error::Error;
 
 const DEFAULT_DNS_PORT: u16 = 53;
 
-pub const ALL: &[&Resolver<'static>] = &[OPENDNS_V4, OPENDNS_V6, GOOGLE_V4, GOOGLE_V6];
+pub const ALL: &[&Resolver<'static>] = &[
+    OPENDNS_V4,
+    OPENDNS_V6,
+    GOOGLE_V4,
+    GOOGLE_V6,
+    CLOUDFLARE_V4,
+    CLOUDFLARE_V6,
+];
 
 pub const OPENDNS_V4: &Resolver<'static> = &Resolver::new_static(
     "myip.opendns.com",
@@ -31,6 +38,7 @@ pub const OPENDNS_V4: &Resolver<'static> = &Resolver::new_static(
     ],
     DEFAULT_DNS_PORT,
     QueryMethod::A,
+    DNSClass::IN,
 );
 
 pub const OPENDNS_V6: &Resolver<'static> = &Resolver::new_static(
@@ -43,6 +51,7 @@ pub const OPENDNS_V6: &Resolver<'static> = &Resolver::new_static(
     ],
     DEFAULT_DNS_PORT,
     QueryMethod::AAAA,
+    DNSClass::IN,
 );
 
 pub const GOOGLE_V4: &Resolver<'static> = &Resolver::new_static(
@@ -55,6 +64,7 @@ pub const GOOGLE_V4: &Resolver<'static> = &Resolver::new_static(
     ],
     DEFAULT_DNS_PORT,
     QueryMethod::TXT,
+    DNSClass::IN,
 );
 
 pub const GOOGLE_V6: &Resolver<'static> = &Resolver::new_static(
@@ -71,6 +81,31 @@ pub const GOOGLE_V6: &Resolver<'static> = &Resolver::new_static(
     ],
     DEFAULT_DNS_PORT,
     QueryMethod::TXT,
+    DNSClass::IN,
+);
+
+pub const CLOUDFLARE_V4: &Resolver<'static> = &Resolver::new_static(
+    "whoami.cloudflare",
+    &[
+        IpAddr::V4(Ipv4Addr::new(1, 1, 1, 1)),
+        IpAddr::V4(Ipv4Addr::new(1, 0, 0, 1)),
+    ],
+    DEFAULT_DNS_PORT,
+    QueryMethod::TXT,
+    DNSClass::CH,
+);
+
+pub const CLOUDFLARE_V6: &Resolver<'static> = &Resolver::new_static(
+    "whoami.cloudflare",
+    &[
+        // 2606:4700:4700::1111
+        IpAddr::V6(Ipv6Addr::new(9734, 18176, 18176, 0, 0, 0, 0, 4369)),
+        // 2606:4700:4700::1001
+        IpAddr::V6(Ipv6Addr::new(9734, 18176, 18176, 0, 0, 0, 0, 4097)),
+    ],
+    DEFAULT_DNS_PORT,
+    QueryMethod::TXT,
+    DNSClass::CH,
 );
 
 /// Method used to query an IP address from a DNS server
@@ -92,6 +127,7 @@ pub struct Resolver<'r> {
     name: Cow<'r, str>,
     servers: Cow<'r, [IpAddr]>,
     method: QueryMethod,
+    query_class: DNSClass,
 }
 
 impl Resolver<'static> {
@@ -101,12 +137,14 @@ impl Resolver<'static> {
         servers: &'static [IpAddr],
         port: u16,
         method: QueryMethod,
+        query_class: DNSClass,
     ) -> Self {
         Self {
             port,
             name: Cow::Borrowed(name),
             servers: Cow::Borrowed(servers),
             method,
+            query_class,
         }
     }
 }
@@ -138,7 +176,8 @@ impl<'r> Resolver<'r> {
             QueryMethod::TXT => RecordType::TXT,
         };
 
-        let query = Query::query(name, record_type);
+        let mut query = Query::query(name, record_type);
+        query.set_query_class(self.query_class);
         let fut = resolve(first_server, port, query.clone(), method);
 
         Box::pin(DnsResolutions {
